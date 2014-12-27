@@ -10,13 +10,21 @@ def collapse(bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, out
 
     downloads keys (files) that match inPrefix, concatenates all of them 
     into outFile uploads outFile to outKey, then deletes downloaded keys
+
     Arguments:
-    bucket -- bucket object. must already be initiated
-    inPrefix -- prefix used to list keys, like wildcard (i.e. path/to/files*)
-    outFile -- local file name that the others will be collapsed into
-    outKey -- S3 key where the contents of outFile will be written to (i.e. uploaded file)
-    outMaxSize -- if the outFile size grows over this value, raise exception and cancel. set to 0 to disable
-    outRRS -- if true the new key will be set to use Reduced Redundancy Storage
+    bucket (str)
+        bucket object. must already be initiated
+    inPrefix (str)
+        prefix used to list keys, like wildcard (i.e. path/to/files*)
+    outFile (str)
+        local file name that the others will be collapsed into
+    outKey (str)
+        S3 key where the contents of outFile will be written to (i.e. uploaded file)
+    outMaxSize (int)
+        if the outFile size grows over this value, raise exception and cancel.
+        defaults to 2GB, set to 0 to disable
+    outRRS (str)
+        if True the new key will be set to use Reduced Redundancy Storage
     """
     # DOWNLOADING AND CONCATENATING
     # open outFile in binary mode because get_contents_* returns bytes
@@ -45,13 +53,15 @@ def collapse(bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, out
                     inChunk = tempFD.read(256*1024)
             if  outMaxSize > 0 and outFD.tell() > outMaxSize:
                 os.remove(outFile)
-                raise RuntimeError("Output file size bigger than the maximum of " + str(outMaxSize) + "B. Removed " + outFile + ", canceling operation")
+                raise RuntimeError("Output file size bigger than the maximum of " + str(outMaxSize) + "B. Removed " \
+                        + outFile + ", canceling operation")
                 outFD.close()
         # any problems should have already interrupted execution, 
         # but this double-check is cheap
         outSize = outFD.tell()
         if inSize != outSize:
-            raise RuntimeError("Collapsed file size of " + str(outSize) + " bytes is different than the expected " + str(inSize) + " bytes!")
+            raise RuntimeError("Collapsed file size of " + str(outSize) + " bytes is different than the expected " \
+                    + str(inSize) + " bytes!")
     # UPLOADING CONCATENATED FILE
     # files downloaded and concatenated, uploading outFile
     # could maybe go with multipart uploads here
@@ -69,18 +79,28 @@ def collapse(bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, out
     # DELETE LOCAL CONCATENATED FILE
     os.remove(outFile)
 
+
 def s3_progress(current, total):
-    logging.info('    Transferred {:f}%'.format(current/total*100))
+    '''
+    called by s3 upload/download functions to display progress
+    '''
+
+    logging.info('    Transferred {:d}%'.format(int(current/total*100)))
+
 
 def dtm_to_s3_log(dtm, increment):
-    ''' convert datetime to a string like 2014-12-31
+    '''
+    convert datetime to a string like 2014-12-31
 
-        will convert dtm to the appropriate prefix string, depending
-        on the selected incrment. For S3 logs, which have names like 
-        2014-12-31-17-25-36-XXXXXXXXXXXXXXXX
-        Arguments:
-        dtm -- datetime object to be converted
-        increment -- what kind of stepping will be used
+    will convert dtm to the appropriate prefix string, depending
+    on the selected incrment. For S3 logs, which have names like 
+    2014-12-31-17-25-36-XXXXXXXXXXXXXXXX
+
+    Arguments:
+    dtm (datetime)
+        object to be converted
+    increment (str)
+        what kind of stepping will be used
     '''
     # {:%Y-%m-%d-%H-%M-%S-}
     if increment == "d": # day
@@ -100,12 +120,25 @@ def dtm_to_s3_log(dtm, increment):
 
     return dtstr
 
-def collapse_s3_backlog(s3BucketName, s3dir, dateStart, dateEnd=datetime(datetime.today().year,datetime.today().month,datetime.today().day)-timedelta(seconds=1), increment="d"):
-    ''' get all logs starting with a certain date and collapse them into one
+def collapse_s3_backlog(s3BucketName, s3dir, dateStart, \
+        dateEnd=datetime(datetime.today().year,datetime.today().month,datetime.today().day)-timedelta(seconds=1), \
+        increment="d"):
+    '''
+    mass collapse S3 logs generated in the specified time period 
 
     Arguments:
-    s3BucketName (str) -- name of the bucket
-    s3dir (str) 
+    s3BucketName (str)
+        name of the bucket
+    s3dir (str)
+        s3 'path' where the logs reside
+    dateStart (datetime)
+        collapse logs starting this day...
+    dateEnd (datetime)
+        ...up to this day, inclusive. by default, yesterday 23:59:59
+    increment (str)
+        how to group logs. (d)aily/(H)ourly/(M)onthly 
+
+    Ex.: collapse_s3_backlog('myBucket', 'logs/s3logs/', datetime(2014,7,29))
     '''
 
     if increment == "d":
@@ -121,7 +154,7 @@ def collapse_s3_backlog(s3BucketName, s3dir, dateStart, dateEnd=datetime(datetim
     s3bucket = s3conn.get_bucket(s3BucketName)
 
     s3dir = os.path.join(s3dir, '')
-    outDir = './s3collapse/'
+    outDir = os.path.join(tempfile.gettempdir(), '')
 
     dateCurrentLogs = dateStart
     while dateCurrentLogs <= dateEnd:
@@ -132,7 +165,4 @@ def collapse_s3_backlog(s3BucketName, s3dir, dateStart, dateEnd=datetime(datetim
         logging.info('{0}/{1}'.format(s3BucketName, inPrefix))
         collapse(s3bucket, inPrefix, outFile, outKey)
         dateCurrentLogs = dateCurrentLogs + timeStep
-
-logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-
 
