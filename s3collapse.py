@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime, timedelta
 import boto
 
-def collapse(bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, outRRS = False):
+def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, outRRS = False):
     """
     concatenate all (small) files passed to the funtion into one larger one
 
@@ -12,8 +12,8 @@ def collapse(bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, out
     into outFile uploads outFile to outKey, then deletes downloaded keys
 
     Arguments:
-    bucket (str)
-        bucket object. must already be initiated
+    s3bucket
+        s3bucket object. must already be initiated
     inPrefix (str)
         prefix used to list keys, like wildcard (i.e. path/to/files*)
     outFile (str)
@@ -29,7 +29,7 @@ def collapse(bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, out
     # DOWNLOADING AND CONCATENATING
     # open outFile in binary mode because get_contents_* returns bytes
     with open(outFile, mode='wb') as outFD:
-        inKeys = bucket.list(inPrefix)
+        inKeys = s3bucket.list(inPrefix)
         if len(list(inKeys)) == 0:
             logging.info('  No files for this prefix')
             return
@@ -66,7 +66,7 @@ def collapse(bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, out
     # files downloaded and concatenated, uploading outFile
     # could maybe go with multipart uploads here
     logging.info('  Uploading {} ({:d} Bytes) to {}'.format(outFile, outSize, outKey))
-    outKeyD = bucket.new_key(outKey)
+    outKeyD = s3bucket.new_key(outKey)
     outKeySize = outKeyD.set_contents_from_filename(outFile, replace=False, reduced_redundancy=outRRS, cb=s3_progress, num_cb=3)
     if outKeySize == None:
         outKeySize = 0
@@ -120,15 +120,15 @@ def dtm_to_s3_log(dtm, increment):
 
     return dtstr
 
-def collapse_s3_backlog(s3BucketName, s3dir, dateStart, \
+def collapse_s3_backlog(s3bucket, s3dir, dateStart, \
         dateEnd=datetime(datetime.today().year,datetime.today().month,datetime.today().day)-timedelta(seconds=1), \
         increment="d"):
     '''
     mass collapse S3 logs generated in the specified time period 
 
     Arguments:
-    s3BucketName (str)
-        name of the bucket
+    s3bucket
+        bucket object. must already be initiated
     s3dir (str)
         s3 'path' where the logs reside
     dateStart (datetime)
@@ -150,9 +150,6 @@ def collapse_s3_backlog(s3BucketName, s3dir, dateStart, \
     else:
         raise RuntimeError('increment "' + increment + '" undefined, aborting')
     
-    s3conn = boto.connect_s3()
-    s3bucket = s3conn.get_bucket(s3BucketName)
-
     s3dir = os.path.join(s3dir, '')
     outDir = os.path.join(tempfile.gettempdir(), '')
 
@@ -162,7 +159,7 @@ def collapse_s3_backlog(s3BucketName, s3dir, dateStart, \
         inPrefix = s3dir + prefix + "-"
         outFile = outDir + prefix + '_collapsed'
         outKey = s3dir + prefix + '_collapsed'
-        logging.info('{0}/{1}'.format(s3BucketName, inPrefix))
+        logging.info('{0}/{1}'.format(s3bucket.name, inPrefix))
         collapse(s3bucket, inPrefix, outFile, outKey)
         dateCurrentLogs = dateCurrentLogs + timeStep
 
