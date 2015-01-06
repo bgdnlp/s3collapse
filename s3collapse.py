@@ -35,17 +35,29 @@ def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, o
             return
         inSize = 0
         logging.info('  Downloading {:d} keys'.format(len(list(inKeys))))
+        # True if the last file loaded was .gz, False otherwise
+        wasGzip = None
         for inKey in inKeys:
             # keep track of total size to check at the end
             inSize = inSize + inKey.size 
             # create a temporary file that will reside in memory until it reaches
             # 16MB, at which point it gets written to disk. default is binary mode
-            #logging.info('  Downloading {}'.format(inKey))
             with tempfile.SpooledTemporaryFile(max_size = 16*1024*1024) as tempFD:
                 inKey.get_contents_to_file(tempFD)
                 # move back to start of file
                 tempFD.flush()
                 tempFD.seek(0)
+                if wasGzip == None:
+                    wasGzip = isGzip(tempFD, inKey.name)
+                if isGzip(tempFD, inKey.name) != wasGzip:
+                    # raise exception, we don't want to combine gzip and non-gzip files
+                    if wasGzip:
+                        fileType = 'not gzip'
+                        filesType = 'gzip'
+                    else:
+                        fileType = 'gzip'
+                        filesType = 'not gzip'
+                    raise Exception('File {} is {}, but the other files so far were {}'.format(inKey.name, fileType, filesType))
                 # read tempfile 256KB at a time, write to outFile
                 inChunk = tempFD.read(256*1024)
                 while len(inChunk):
@@ -162,4 +174,42 @@ def collapse_s3_backlog(s3bucket, s3dir, dateStart, \
         logging.info('{0}/{1}'.format(s3bucket.name, inPrefix))
         collapse(s3bucket, inPrefix, outFile, outKey)
         dateCurrentLogs = dateCurrentLogs + timeStep
+
+def isGzip(fd, fn=None):
+    '''
+    determines if file is a gzip archive or not
+
+    checks magic number (first two bytes) and file extension if passed a file
+    name in order to determine if file is a gzip archive. returns True or False
+    if a file name is also passed to the function, it return True if and only if
+    file extension is '.gz' AND first two bytes are '1f 8b'. if only the magic
+    number should be checked, don't give it a file name
+    
+    Arguments:
+    fd (file descriptor)
+        file descriptor. implies file is already open
+    fn (str)
+        file name
+    '''
+    
+    fdPosition=fd.tell()
+    fd.seek(0)
+    byte1 = fd.read(1)
+    byte2 = fd.read(1)
+    fd.seek(fdPosition)
+    # check magic number
+    if byte1 == b'\x1f' and byte2 == b'\x8b':
+        hasBytes = True
+    else:
+        hasBytes = False
+    # check extention
+    if type(fn) is str:
+        if fn[-3:len(fn)] == '.gz':
+            hasExtension = True
+        else:
+            hasExtension = False
+    else:
+        hasExtension = True
+
+    return hasBytes and hasExtension
 
