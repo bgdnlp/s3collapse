@@ -170,23 +170,26 @@ def isGzip(fd, fn=None):
 
     return hasBytes and hasExtension
 
-def collapse_s3_backlog(s3bucket, s3dir, dateStart, \
+def collapse_s3_backlog(s3bucket, s3inDir, dateStart, \
         dateEnd=datetime(datetime.today().year,datetime.today().month,datetime.today().day)-timedelta(seconds=1), \
-        increment="d"):
+        increment="d", s3outDir=None):
     '''
     mass collapse S3 logs generated in the specified time period 
 
     Arguments:
     s3bucket
         bucket object. must already be initiated
-    s3dir (str)
+    s3inDir (str)
         s3 'path' where the logs reside
     dateStart (datetime)
         collapse logs starting this day...
     dateEnd (datetime)
         ...up to this day, inclusive. by default, yesterday 23:59:59
     increment (str)
-        how to group logs. (d)aily/(H)ourly/(M)onthly 
+        how to group logs. (d)aily/(H)ourly/(M)onthly
+    s3outDir (str)
+        directory where the resulting file will be stored on S3. 
+        if unspecified it will be the same as s3inDir
 
     Ex.: collapse_s3_backlog('myBucket', 'logs/s3logs/', datetime(2014,7,29))
     '''
@@ -200,20 +203,24 @@ def collapse_s3_backlog(s3bucket, s3dir, dateStart, \
     else:
         raise RuntimeError('increment "' + increment + '" undefined, aborting')
     
-    s3dir = os.path.join(s3dir, '')
+    s3inDir = os.path.join(s3inDir, '')
+    if s3outDir == None:
+        s3outDir = s3inDir
+    else:
+        s3outDir = os.path.join(s3outDir, '')
     outDir = os.path.join(tempfile.gettempdir(), '')
 
     dateCurrentLogs = dateStart
     while dateCurrentLogs <= dateEnd:
         prefix = dtm_to_s3_log(dateCurrentLogs, increment)
-        inPrefix = s3dir + prefix + "-"
+        inPrefix = s3inDir + prefix + "-"
         outFile = outDir + prefix + '_collapsed'
-        outKey = s3dir + prefix + '_collapsed'
+        outKey = s3outDir + prefix + '_collapsed'
         logging.info('{0}/{1}'.format(s3bucket.name, inPrefix))
         collapse(s3bucket, inPrefix, outFile, outKey)
         dateCurrentLogs = dateCurrentLogs + timeStep
 
-def collapse_s3_yesterday(s3bucket, s3dir):
+def collapse_s3_yesterday(s3bucket, s3inDir, s3outDir=None):
     '''
     just a wrapper for collapse_s3_backlog()
 
@@ -221,11 +228,11 @@ def collapse_s3_yesterday(s3bucket, s3dir):
     Arguments:
     s3bucket
         bucket object, must already be initialized
-    s3dir (str)
+    s3inDir (str)
         s3 'path' where the logs reside
     '''
     
     # end and beginning of yesterday
     dateEnd = datetime(datetime.today().year, datetime.today().month, datetime.today().day) - timedelta(seconds=1)
     dateStart = datetime(dateEnd.year, dateEnd.month, dateEnd.day)
-    collapse_s3_backlog(s3bucket, s3dir, dateStart, dateEnd, increment="d")
+    collapse_s3_backlog(s3bucket, s3inDir, dateStart, dateEnd, increment="d", s3outDir=s3outDir)
