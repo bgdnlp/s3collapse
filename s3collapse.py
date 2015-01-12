@@ -289,9 +289,10 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
             s3outDir = 'AWSLogs_collapsed/{}/CloudTrail/{}/'.format(account, region)
         else:
             raise Exception("s3outDir could not be defined")
+        fileName = '{}_CloudTrail_{}_{:%Y%m%d}_collapsed'.format(account, region, dt)
         outDir = os.path.join(tempfile.gettempdir(), '')
-        outFile = '{}{}_CloudTrail_{}_{:%Y%m%d}_collapsed'.format(outDir, account, region, dt)
-        s3outFile = s3outDir + outFile
+        outFile = '{}{}'.format(outDir, fileName)
+        s3outFile = '{}{}'.format(s3outDir, fileName)
         logging.info('{}: {} -> {}'.format(s3bucket.name, s3inPrefix, s3outFile))
         collapse(s3bucket, s3inPrefix, outFile, s3outFile, outRRS = outRRS)
         dt = dt + timedelta(days=1)
