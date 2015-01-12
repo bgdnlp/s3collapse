@@ -32,6 +32,8 @@ def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, o
         inKeys = s3bucket.list(inPrefix)
         if len(list(inKeys)) == 0:
             logging.info('  No files for this prefix')
+            outFD.close()
+            os.remove(outFile)
             return
         inSize = 0
         logging.info('  Downloading {:d} keys'.format(len(list(inKeys))))
@@ -278,7 +280,7 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
             s3inDir = 'AWSLogs/{}/CloudTrail/{}/{:%Y/%m/%d}/'.format(account, region, dt)
         else:
             raise Exception("Region and/or account not specified")
-        s3inFile = '{}_CloudTrail_{}_{}{}{}T'.format(account, region, str(dt.year), str(dt.month), str(dt.day))
+        s3inFile = '{}_CloudTrail_{}_{:%Y%m%d}T'.format(account, region, dt)
         s3inPrefix = s3inDir + s3inFile
         if type(s3outDir) is str:
             # defined, all good
@@ -287,7 +289,7 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
             s3outDir = 'AWSLogs_collapsed/{}/CloudTrail/{}/'.format(account, region)
         else:
             raise Exception("s3outDir could not be defined")
-        outFile = '{}_CloudTrail_{}_{}{}{}_collapsed'.format(account, region, str(dt.year), str(dt.month), str(dt.day))
+        outFile = '{}_CloudTrail_{}_{:%Y%m%d}_collapsed'.format(account, region, dt)
         s3outFile = s3outDir + outFile
         logging.info('{}: {} -> {}'.format(s3bucket.name, s3inPrefix, s3outFile))
         collapse(s3bucket, s3inPrefix, outFile, s3outFile, outRRS = outRRS)
