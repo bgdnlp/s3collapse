@@ -187,9 +187,9 @@ def collapse_s3(s3bucket, s3inDir, s3outDir=None, dateStart=None, dateEnd=None, 
     s3inDir (str)
         s3 'path' where the logs reside
     dateStart (datetime)
-        collapse logs starting this day...
+        collapse logs starting this day (default yesterday 00:00:00)...
     dateEnd (datetime)
-        ...up to this day, inclusive. by default, yesterday 23:59:59
+        ...up to this day, inclusive (default, yesterday 23:59:59)
     increment (str)
         how to group logs. (d)aily/(H)ourly/(M)onthly
     s3outDir (str)
@@ -224,7 +224,7 @@ def collapse_s3(s3bucket, s3inDir, s3outDir=None, dateStart=None, dateEnd=None, 
         s3outDir = s3inDir
     else:
         s3outDir = os.path.join(s3outDir, '')
-    outDir = os.path.join(tempfile.gettempdir(), '')
+    outDir = os.path.join(tempfile.mkdtemp(prefix="collapse_s3_"), '')
 
     dateCurrentLogs = dateStart
     while dateCurrentLogs <= dateEnd:
@@ -235,6 +235,7 @@ def collapse_s3(s3bucket, s3inDir, s3outDir=None, dateStart=None, dateEnd=None, 
         logging.info('{0}/{1}'.format(s3bucket.name, inPrefix))
         collapse(s3bucket, inPrefix, outFile, outKey, outRRS = outRRS)
         dateCurrentLogs = dateCurrentLogs + timeStep
+    os.rmdir(outDir) # should be empty. if it isn't, we might want the files anyway
 
 def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStart=None, dateEnd=None, increment="d", outRRS = False):
     '''
@@ -256,9 +257,9 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
         if specified it will be used along with account to construct
         s3dirIn and s3outDir
     dateStart (datetime)
-        collapse logs starting this day...
+        collapse logs starting this day (default yesterday 00:00:00)...
     dateEnd (datetime)
-        ...up to this day, inclusive. by default, yesterday 23:59:59
+        ...up to this day, inclusive (default, yesterday 23:59:59)
     increment (str)
         how to group logs. (d)aily/(H)ourly/(M)onthly
     outRRS (boolean)
@@ -274,6 +275,7 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
             # yesterday, midnight
             dateStart = datetime(dateEnd.year, dateEnd.month, dateEnd.day)
 
+    outDir = os.path.join(tempfile.mkdtemp(prefix="collapse_ctrail_"), '')
     dt = dateStart
     while dt <= dateEnd:
         if type(region) is str and type(account) is str: 
@@ -290,9 +292,10 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
         else:
             raise Exception("s3outDir could not be defined")
         fileName = '{}_CloudTrail_{}_{:%Y%m%d}_collapsed'.format(account, region, dt)
-        outDir = os.path.join(tempfile.gettempdir(), '')
         outFile = '{}{}'.format(outDir, fileName)
         s3outFile = '{}{}'.format(s3outDir, fileName)
         logging.info('{}: {} -> {}'.format(s3bucket.name, s3inPrefix, s3outFile))
         collapse(s3bucket, s3inPrefix, outFile, s3outFile, outRRS = outRRS)
         dt = dt + timedelta(days=1)
+    os.rmdir(outDir) # should be empty. if it isn't, we might want the files anyway
+
