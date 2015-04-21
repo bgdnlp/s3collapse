@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime, timedelta
 import boto
 
-def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, outRRS = False):
+def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, outRRS = False, rmOutFile = True):
     """
     concatenate all (small) files passed to the funtion into one larger one
 
@@ -23,8 +23,10 @@ def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, o
     outMaxSize (int)
         if the outFile size grows over this value, raise exception and cancel.
         defaults to 2GB, set to 0 to disable
-    outRRS (str)
+    outRRS
         if True the new key will be set to use Reduced Redundancy Storage
+    rmOutFile
+        if False the concatenated file will not be removed from local storage
     """
     # DOWNLOADING AND CONCATENATING
     # open outFile in binary mode because get_contents_* returns bytes
@@ -59,7 +61,8 @@ def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, o
                     else:
                         fileType = 'gzip'
                         filesType = 'not gzip'
-                    raise Exception('File {} is {}, but the other files so far were {}'.format(inKey.name, fileType, filesType))
+                    raise Exception(
+                        'File {} is {}, but the other files so far were {}'.format(inKey.name, fileType, filesType))
                 # read tempfile 256KB at a time, write to outFile
                 inChunk = tempFD.read(256*1024)
                 while len(inChunk):
@@ -67,32 +70,34 @@ def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, o
                     inChunk = tempFD.read(256*1024)
             if  outMaxSize > 0 and outFD.tell() > outMaxSize:
                 os.remove(outFile)
-                raise RuntimeError("Output file size bigger than the maximum of " + str(outMaxSize) + "B. Removed " \
+                raise RuntimeError("Output file size bigger than the maximum of " + str(outMaxSize) + "B. Removed "
                         + outFile + ", canceling operation")
                 outFD.close()
         # any problems should have already interrupted execution, 
         # but this double-check is cheap
         outSize = outFD.tell()
         if inSize != outSize:
-            raise RuntimeError("Collapsed file size of " + str(outSize) + " bytes is different than the expected " \
+            raise RuntimeError("Collapsed file size of " + str(outSize) + " bytes is different than the expected "
                     + str(inSize) + " bytes!")
     # UPLOADING CONCATENATED FILE
     # files downloaded and concatenated, uploading outFile
     # could maybe go with multipart uploads here
     logging.info('  Uploading {} ({:d} Bytes) to {}'.format(outFile, outSize, outKey))
     outKeyD = s3bucket.new_key(outKey)
-    outKeySize = outKeyD.set_contents_from_filename(outFile, replace=False, reduced_redundancy=outRRS, cb=s3_progress, num_cb=3)
+    outKeySize = outKeyD.set_contents_from_filename(outFile, replace=False, reduced_redundancy=outRRS, cb=s3_progress, 
+        num_cb=3)
     if outKeySize == None:
         outKeySize = 0
     if outKeySize != outSize:
-        raise RuntimeError("Uploaded file size (" + str(outKeySize) + "B) differs from local file size (" + str(outSize) + "B)")
+        raise RuntimeError("Uploaded file size (" + str(outKeySize) + "B) differs from local file size (" + 
+            str(outSize) + "B)")
     # DELETE COLLAPSED KEYS
     logging.info('  Removing {:d} keys'.format(len(list(inKeys))))
     for inKey in inKeys:
         inKey.delete()
     # DELETE LOCAL CONCATENATED FILE
-    os.remove(outFile)
-
+    if rmOutFile == True:
+        os.remove(outFile)
 
 def s3_progress(current, total):
     '''
@@ -100,7 +105,6 @@ def s3_progress(current, total):
     '''
 
     logging.info('    Transferred {:d}%'.format(int(current/total*100)))
-
 
 def dtm_to_s3_log(dtm, increment):
     '''
@@ -116,6 +120,7 @@ def dtm_to_s3_log(dtm, increment):
     increment (str)
         what kind of stepping will be used
     '''
+
     # {:%Y-%m-%d-%H-%M-%S-}
     if increment == "d": # day
         dtstr = '{:%Y-%m-%d}'.format(dtm)
@@ -237,7 +242,8 @@ def collapse_s3(s3bucket, s3inDir, s3outDir=None, dateStart=None, dateEnd=None, 
         dateCurrentLogs = dateCurrentLogs + timeStep
     os.rmdir(outDir) # should be empty. if it isn't, we might want the files anyway
 
-def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStart=None, dateEnd=None, increment="d", outRRS = False):
+def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStart=None, dateEnd=None, increment="d", 
+        outRRS = False):
     '''
     mass collapse CloudTrail logs generated in the specified time period
 
@@ -266,7 +272,6 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
         use Reduced Redundancy Storage for the new file or not
         passed on to collapse()
     '''
-
 
     if dateEnd == None:
         # yesterday, one second before midnight
