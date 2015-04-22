@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime, timedelta
 import boto
 
-def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, outRRS = False, rmOutFile = True):
+def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, outRRS=False, rmOutFile=True):
     """
     concatenate all (small) files passed to the funtion into one larger one
 
@@ -99,12 +99,14 @@ def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, o
     if rmOutFile == True:
         os.remove(outFile)
 
+
 def s3_progress(current, total):
     '''
     called by s3 upload/download functions to display progress
     '''
 
     logging.info('    Transferred {:d}%'.format(int(current/total*100)))
+
 
 def dtm_to_s3_log(dtm, increment):
     '''
@@ -138,6 +140,7 @@ def dtm_to_s3_log(dtm, increment):
         raise RuntimeError('increment "' + increment + '" undefined, aborting')
 
     return dtstr
+
 
 def isGzip(fd, fn=None):
     '''
@@ -177,7 +180,8 @@ def isGzip(fd, fn=None):
 
     return hasBytes and hasExtension
 
-def collapse_s3(s3bucket, s3inDir, s3outDir=None, dateStart=None, dateEnd=None, increment="d", outRRS = False):
+
+def collapse_s3(s3bucket, s3inDir, s3outDir=None, dateStart=None, dateEnd=None, increment="d", outRRS=False):
     '''
     mass collapse S3 logs generated in the specified time period
 
@@ -242,8 +246,9 @@ def collapse_s3(s3bucket, s3inDir, s3outDir=None, dateStart=None, dateEnd=None, 
         dateCurrentLogs = dateCurrentLogs + timeStep
     os.rmdir(outDir) # should be empty. if it isn't, we might want the files anyway
 
+
 def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStart=None, dateEnd=None, increment="d", 
-        outRRS = False):
+        outRRS=False):
     '''
     mass collapse CloudTrail logs generated in the specified time period
 
@@ -301,6 +306,76 @@ def collapse_ctrail(s3bucket, region=None, account=None, s3outDir=None, dateStar
         s3outFile = '{}{}'.format(s3outDir, fileName)
         logging.info('{}: {} -> {}'.format(s3bucket.name, s3inPrefix, s3outFile))
         collapse(s3bucket, s3inPrefix, outFile, s3outFile, outRRS = outRRS)
+        dt = dt + timedelta(days=1)
+    os.rmdir(outDir) # should be empty. if it isn't, we might want the files anyway
+
+
+def collapse_redshift(s3bucket, region=None, account=None, cluster=None, 
+        s3outDir=None, dateStart=None, dateEnd=None, increment="d", 
+        outRRS=False):
+    '''
+    mass collapse redshift logs generated in the specified time period
+
+    start date and end date both default to yesterday unless specified
+    if only dateStart is specified it will group logs from
+    startDate to yesterday
+    Ex.: collapse_redshift(myBucket, 'us-east-1', '12345678900', datestart = datetime(2014,7,29), outRRS = True)
+
+    Arguments:
+    s3bucket
+        bucket object. must already be initiated
+    s3outDir (str)
+        directory where the resulting file will be stored on S3. 
+        if unspecified it will be the same as s3inDir
+        takes precedent over region/account
+    region (str)
+        if specified it will be used along with account to construct
+        s3dirIn and s3outDir
+    cluster (str)
+        cluster name, part of the redshift log filename
+    dateStart (datetime)
+        collapse logs starting this day (default yesterday 00:00:00)...
+    dateEnd (datetime)
+        ...up to this day, inclusive (default, yesterday 23:59:59)
+    increment (str)
+        NOT IMPLEMENTED, ALWAYS DAILY. how to group logs. (d)aily/(H)ourly/(M)onthly
+    outRRS (boolean)
+        use Reduced Redundancy Storage for the new file or not
+        passed on to collapse()
+    '''
+
+    if dateEnd == None:
+        # yesterday, one second before midnight
+        dateEnd = datetime(datetime.today().year, datetime.today().month, datetime.today().day) - timedelta(seconds=1)
+        if dateStart == None:
+            # yesterday, midnight
+            dateStart = datetime(dateEnd.year, dateEnd.month, dateEnd.day)
+
+    outDir = os.path.join(tempfile.mkdtemp(prefix="collapse_redshift_"), '')
+    dt = dateStart
+    logtypes = ['connectionlog', 'userlog', 'useractivitylog']
+    while dt <= dateEnd:
+        for logtype in logtypes:
+            if type(region) is str and type(account) is str:
+                s3inDir = 'AWSLogs/{}/redshift/{}/{:%Y/%m/%d}/'.format(account, region, dt)
+            else:
+                raise Exception('Region and/or account not specified')
+            if type(cluster) is not str or type(logtype) is not str:
+                raise Exception('Need a cluster name')
+            s3inFile = '{}_redshift_{}_{}_{}_{:%Y-%m-%d}T'.format(account, region, cluster, logtype, dt)
+            s3inPrefix = s3inDir + s3inFile
+            if type(s3outDir) is str:
+                # defined, all good
+                pass # Python doesn't like empty blocks
+            elif type(region) is str and type(account) is str:
+                s3outDir = 'AWSLogs_collapsed/{}/redshift/{}/'.format(account, region)
+            else:
+                raise Exception("s3outDir could not be defined")
+            fileName = '{}_redshift_{}_{}_{}_{:%Y-%m-%d}T_collapsed'.format(account, region, cluster, logtype, dt)
+            outFile = '{}{}'.format(outDir, fileName)
+            s3outFile = '{}{}'.format(s3outDir, fileName)
+            logging.info('{}: {} -> {}'.format(s3bucket.name, s3inPrefix, s3outFile))
+            collapse(s3bucket, s3inPrefix, outFile, s3outFile, outRRS=outRRS)
         dt = dt + timedelta(days=1)
     os.rmdir(outDir) # should be empty. if it isn't, we might want the files anyway
 
