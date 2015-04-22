@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime, timedelta
 import boto
 
-def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=2*1024*1024*1024, outRRS=False, rmOutFile=True):
+def collapse(s3bucket, inPrefix, outFile, outKey, outMaxSize=5*1024*1024*1024, outRRS=False, rmOutFile=True):
     """
     concatenate all (small) files passed to the funtion into one larger one
 
